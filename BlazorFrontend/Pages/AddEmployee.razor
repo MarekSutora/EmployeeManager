@@ -1,0 +1,149 @@
+﻿@page "/add-employee"
+@using Shared
+@using Shared.DTOs
+@using System.Text.Json
+@inject HttpClient Http
+
+<PageTitle>Add Employee</PageTitle>
+
+<div class="d-flex justify-content-center">
+    <div class="col-md-6">
+        <h3 class="text-center">Add New Employee</h3>
+
+        <EmployeeForm Employee="newEmployeeWrapper" OnValidSubmit="HandleValidSubmit" />
+
+        @if (errorMessage != null)
+        {
+            <div class="alert alert-danger mt-3" role="alert">
+                @errorMessage
+            </div>
+        }
+
+        <hr />
+        <h4 class="text-center">Bulk Add Employees</h4>
+        <InputFile class="form-control mb-3" accept=".json" OnChange="HandleFileSelected" />
+        <button class="btn btn-secondary" @onclick="UploadEmployees">Upload Employees</button>
+    </div>
+</div>
+
+@code {
+    private EmployeeFormWrapper newEmployeeWrapper = new();
+    private List<ReadPositionDto> positions = new();
+    private string? errorMessage;
+    private IBrowserFile? selectedFile;
+
+    protected override async Task OnInitializedAsync()
+    {
+        positions = await Http.GetFromJsonAsync<List<ReadPositionDto>>("https://localhost:7096/Positions") ?? new List<ReadPositionDto>();
+    }
+
+    private async Task HandleValidSubmit(EmployeeFormWrapper employee)
+    {
+        try
+        {
+            errorMessage = null;
+
+            var countryCode = await GetCountryCodeFromIp(employee.IpAddress);
+            if (countryCode == null)
+            {
+                errorMessage = "Failed to retrieve country code from IP address.";
+                return;
+            }
+
+            var newEmployee = new CreateEmployeeDto
+            {
+                Name = employee.Name,
+                Surname = employee.Surname,
+                BirthDate = employee.BirthDate,
+                IpAddress = employee.IpAddress,
+                IpCountryCode = countryCode,
+                PositionId = employee.PositionId
+            };
+
+            var response = await Http.PostAsJsonAsync("https://localhost:7096/Employees", newEmployee);
+            var result = await response.Content.ReadFromJsonAsync<Response>();
+
+            if (result == null || !result.IsSuccess)
+            {
+                errorMessage = result?.Message ?? "Error creating a new Employee.";
+            }
+            else
+            {
+                newEmployeeWrapper = new EmployeeFormWrapper();
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"An error occurred: {ex.Message}";
+        }
+    }
+
+    private async Task<string?> GetCountryCodeFromIp(string ipAddress)
+    {
+        try
+        {
+            var ipString = await Http.GetStringAsync($"https://api.cleantalk.org/?method_name=ip_info&ip={ipAddress}");
+
+            using (var jsonDoc = JsonDocument.Parse(ipString))
+            {
+                if (jsonDoc.RootElement.TryGetProperty("data", out var dataElement) &&
+                    dataElement.TryGetProperty(ipAddress, out var ipElement) &&
+                    ipElement.TryGetProperty("country_code", out var countryCodeElement))
+                {
+                    return countryCodeElement.GetString();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to retrieve country code: {ex.Message}");
+        }
+        return null;
+    }
+
+    private void HandleFileSelected(InputFileChangeEventArgs e)
+    {
+        selectedFile = e.File;
+    }
+
+    private async Task UploadEmployees()
+    {
+        try
+        {
+            errorMessage = null;
+            if (selectedFile != null)
+            {
+                using var stream = selectedFile.OpenReadStream();
+                using var reader = new StreamReader(stream);
+                var content = await reader.ReadToEndAsync();
+
+                var employees = JsonSerializer.Deserialize<List<BulkCreateEmployeeDto>>(content);
+                if (employees != null)
+                {
+                    foreach (var employee in employees)
+                    {
+                        var countryCode = await GetCountryCodeFromIp(employee.IpAddress);
+                        if (countryCode != null)
+                        {
+                            employee.IpCountryCode = countryCode;
+                        }
+                    }
+
+                    var response = await Http.PostAsJsonAsync("https://localhost:7096/Employees/Upload", employees);
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        errorMessage = "Failed to upload employees.";
+                    }
+                }
+            }
+            else
+            {
+                errorMessage = "Please select a valid JSON file to upload.";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"An error occurred: {ex.Message}";
+        }
+    }
+}

@@ -1,0 +1,130 @@
+﻿@page "/update-employee/{id:int}"
+@using Shared
+@using Shared.DTOs
+@using System.Text.Json
+@inject HttpClient Http
+@inject NavigationManager Navigation
+
+<PageTitle>Update Employee</PageTitle>
+
+<h3 class="text-center">Update Employee</h3>
+@if (employeeWrapper == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <div class="d-flex justify-content-center">
+        <div class="col-md-6">
+            <h3 class="text-center">Update Employee</h3>
+            <EmployeeForm Employee="employeeWrapper" OnValidSubmit="HandleValidSubmit" />
+            @if (errorMessage != null)
+            {
+                <div class="alert alert-danger mt-3" role="alert">
+                    @errorMessage
+                </div>
+            }
+        </div>
+    </div>
+})
+
+
+@if (errorMessage != null)
+{
+    <div class="alert alert-danger mt-3" role="alert">
+        @errorMessage
+    </div>
+}
+
+@code {
+    [Parameter] public int id { get; set; }
+    private EmployeeFormWrapper? employeeWrapper;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var employeeDto = await Http.GetFromJsonAsync<ReadEmployeeDto>($"https://localhost:7096/Employees/{id}");
+            if (employeeDto != null)
+            {
+                employeeWrapper = new EmployeeFormWrapper
+                {
+                    Name = employeeDto.Name,
+                    Surname = employeeDto.Surname,
+                    BirthDate = employeeDto.BirthDate,
+                    IpAddress = employeeDto.IpAddress,
+                    PositionId = employeeDto.Position.Id,     
+                };
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"An error occurred while loading data: {ex.Message}";
+        }
+    }
+
+    private async Task HandleValidSubmit(EmployeeFormWrapper employee)
+    {
+        try
+        {
+            errorMessage = null;
+
+            var countryCode = await GetCountryCodeFromIp(employee.IpAddress);
+            if (countryCode == null)
+            {
+                errorMessage = "Failed to retrieve country code from IP address.";
+                return;
+            }
+
+            var updateEmployee = new UpdateEmployeeDto
+            {
+                Name = employee.Name,
+                Surname = employee.Surname,
+                BirthDate = employee.BirthDate,
+                IpAddress = employee.IpAddress,
+                IpCountryCode = countryCode,
+                PositionId = employee.PositionId
+            };
+
+            var response = await Http.PutAsJsonAsync($"https://localhost:7096/Employees/{id}", updateEmployee);
+            var result = await response.Content.ReadFromJsonAsync<Response>();
+
+            if (result == null || !result.IsSuccess)
+            {
+                errorMessage = result?.Message ?? "Error updating the Employee.";
+            }
+            else
+            {
+                Navigation.NavigateTo("/");
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"An error occurred: {ex.Message}";
+        }
+    }
+
+    private async Task<string?> GetCountryCodeFromIp(string ipAddress)
+    {
+        try
+        {
+            var ipString = await Http.GetStringAsync($"https://api.cleantalk.org/?method_name=ip_info&ip={ipAddress}");
+
+            using (var jsonDoc = JsonDocument.Parse(ipString))
+            {
+                if (jsonDoc.RootElement.TryGetProperty("data", out var dataElement) &&
+                    dataElement.TryGetProperty(ipAddress, out var ipElement) &&
+                    ipElement.TryGetProperty("country_code", out var countryCodeElement))
+                {
+                    return countryCodeElement.GetString();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to retrieve country code: {ex.Message}");
+        }
+        return null;
+    }
+}

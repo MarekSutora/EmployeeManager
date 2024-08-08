@@ -1,0 +1,62 @@
+﻿@using Shared.DTOs
+@using System.ComponentModel.DataAnnotations
+@inject HttpClient Http
+
+@code {
+    [Parameter] public EmployeeFormWrapper Employee { get; set; } = new EmployeeFormWrapper();
+    private IEnumerable<ReadPositionDto> Positions { get; set; } = new List<ReadPositionDto>();
+    [Parameter] public EventCallback<EmployeeFormWrapper> OnValidSubmit { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Positions = await Http.GetFromJsonAsync<IEnumerable<ReadPositionDto>>("https://localhost:7096/Positions") ?? [];
+    }
+
+    private async Task OnSubmit()
+    {
+        await OnValidSubmit.InvokeAsync(Employee);
+    }
+}
+
+<EditForm Model="Employee" OnValidSubmit="OnSubmit">
+    <DataAnnotationsValidator />
+    <ValidationSummary />
+
+    <div class="mb-3">
+        <label for="name" class="form-label">Name</label>
+        <InputText id="name" class="form-control" @bind-Value="Employee.Name" />
+        <ValidationMessage For="@(() => Employee.Name)" />
+    </div>
+
+    <div class="mb-3">
+        <label for="surname" class="form-label">Surname</label>
+        <InputText id="surname" class="form-control" @bind-Value="Employee.Surname" />
+        <ValidationMessage For="@(() => Employee.Surname)" />
+    </div>
+
+    <div class="mb-3">
+        <label for="birthDate" class="form-label">Birth Date</label>
+        <InputDate id="birthDate" class="form-control" @bind-Value="Employee.BirthDate" />
+        <ValidationMessage For="@(() => Employee.BirthDate)" />
+    </div>
+
+    <div class="mb-3">
+        <label for="position" class="form-label">Position</label>
+        <InputSelect id="position" class="form-control" @bind-Value="Employee.PositionId">
+            <option value="">Select a position</option>
+            @foreach (var position in Positions)
+            {
+                <option value="@position.Id">@position.Name</option>
+            }
+        </InputSelect>
+        <ValidationMessage For="@(() => Employee.PositionId)" />
+    </div>
+
+    <div class="mb-3">
+        <label for="ipAddress" class="form-label">IP Address</label>
+        <InputText id="ipAddress" class="form-control" @bind-Value="Employee.IpAddress" />
+        <ValidationMessage For="@(() => Employee.IpAddress)" />
+    </div>
+
+    <button type="submit" class="btn btn-primary">Submit</button>
+</EditForm>
