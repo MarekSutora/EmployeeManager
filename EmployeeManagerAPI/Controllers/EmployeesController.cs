@@ -36,6 +36,8 @@ namespace EmployeeManagerAPI.Controllers
                         Id = e.Position.Id,
                         Name = e.Position.Name
                     },
+                    IpAddress = e.IpAddress,
+                    IpCountryCode = e.IpCountryCode
                 }).ToListAsync();
 
             return Ok(employees);
@@ -191,7 +193,7 @@ namespace EmployeeManagerAPI.Controllers
 
             if (existingEmployee)
             {
-                return Conflict("An employee with the same name, surname, and birthdate already exists.");
+                return Conflict("There is already an employee with these values in the database");
             }
 
             employee.Name = updateEmployeeDto.Name;

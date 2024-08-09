@@ -1,8 +1,7 @@
 ﻿@page "/"
 @using Shared.DTOs
 @using System.Net.Http.Json
-@inject HttpClient Http
-@inject NavigationManager Navigation
+@inject HttpClient _httpClient
 
 <PageTitle>Employees</PageTitle>
 
@@ -58,6 +57,8 @@ else
                     <p><strong>Surname:</strong> @selectedEmployee.Surname</p>
                     <p><strong>Birth Date:</strong> @selectedEmployee.BirthDate.ToShortDateString()</p>
                     <p><strong>Position:</strong> @selectedEmployee.Position.Name</p>
+                    <p><strong>IP Address:</strong> @selectedEmployee.IpAddress</p>
+                    <p><strong>Country Code:</strong> @selectedEmployee.IpCountryCode</p>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" @onclick="() => selectedEmployee = null">Close</button>
@@ -110,7 +111,7 @@ else
     {
         try
         {
-            employees = await Http.GetFromJsonAsync<IEnumerable<ReadEmployeeDto>>("Employees");
+            employees = await _httpClient.GetFromJsonAsync<IEnumerable<ReadEmployeeDto>>("Employees");
         }
         catch
         {
@@ -132,7 +133,7 @@ else
     {
         try
         {
-            var response = await Http.DeleteAsync($"Employees/{id}");
+            var response = await _httpClient.DeleteAsync($"Employees/{id}");
             if (response.IsSuccessStatusCode)
             {
                 employeeToDelete = null;

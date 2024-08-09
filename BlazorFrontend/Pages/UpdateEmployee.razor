@@ -84,9 +84,9 @@ else
             var response = await _httpClient.PutAsJsonAsync($"Employees/{Id}", updateEmployee);
             var result = response.IsSuccessStatusCode;
 
-            if (!result)
+            if (response.StatusCode == System.Net.HttpStatusCode.Conflict)
             {
-                _errorMessage = response.Content.ToString() ?? "Error updating the Employee.";
+                _errorMessage = await response.Content.ReadAsStringAsync();
             }
             else
             {

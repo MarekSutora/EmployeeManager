@@ -21,6 +21,30 @@ namespace API.Database
                 .WithMany(p => p.Employees)
                 .HasForeignKey(e => e.PositionId);
 
+            modelBuilder.Entity<Employee>()
+                .Property(e => e.Name)
+                .IsRequired();
+
+            modelBuilder.Entity<Employee>()
+                .Property(e => e.Surname)
+                .IsRequired();
+
+            modelBuilder.Entity<Employee>()
+                .Property(e => e.IpAddress)
+                .IsRequired();
+
+            modelBuilder.Entity<Employee>()
+                .Property(e => e.IpCountryCode)
+                .IsRequired();
+
+            modelBuilder.Entity<Employee>()
+                .Property(e => e.PositionId)
+                .IsRequired();
+
+            modelBuilder.Entity<Position>()
+                .Property(e => e.Name)
+                .IsRequired();
+
             modelBuilder.Entity<Position>().HasData(
                 new Position { Id = 1, Name = "Manager" },
                 new Position { Id = 2, Name = "Developer" },

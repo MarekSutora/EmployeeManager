@@ -64,46 +64,30 @@
 
     protected override async Task OnInitializedAsync()
     {
+        await LoadPositionsAsync();
+    }
+
+    private async Task LoadPositionsAsync()
+    {
         _positions = await _httpClient.GetFromJsonAsync<List<ReadPositionDto>>("Positions") ?? new List<ReadPositionDto>();
     }
 
     private async Task HandleValidSubmit(EmployeeFormWrapper employee)
     {
+        ResetMessages();
         _isLoading = true;
+
         try
         {
-            _errorMessage = null;
-            _successMessage = null;
-
-            var countryCode = await CountryCodeHelper.GetCountryCodeFromIp(employee.IpAddress);
+            var countryCode = await GetCountryCodeAsync(employee.IpAddress);
             if (countryCode == null)
             {
                 _errorMessage = "Failed to retrieve country code from IP address.";
                 return;
             }
 
-            var newEmployee = new CreateEmployeeDto
-                {
-                    Name = employee.Name,
-                    Surname = employee.Surname,
-                    BirthDate = employee.BirthDate,
-                    IpAddress = employee.IpAddress,
-                    IpCountryCode = countryCode,
-                    PositionId = employee.PositionId
-                };
-
-            var response = await _httpClient.PostAsJsonAsync("Employees", newEmployee);
-            var result = response.IsSuccessStatusCode;
-
-            if (!result)
-            {
-                _errorMessage = response.Content.ToString() ?? "Error creating a new Employee.";
-            }
-            else
-            {
-                _successMessage = "Employee created successfully.";
-                _navigationManager.NavigateTo("/");
-            }
+            var newEmployee = CreateEmployeeDto(employee, countryCode);
+            await PostNewEmployeeAsync(newEmployee);
         }
         catch
         {
@@ -112,6 +96,49 @@
         finally
         {
             _isLoading = false;
+        }
+    }
+
+    private void ResetMessages()
+    {
+        _errorMessage = null;
+        _successMessage = null;
+    }
+
+    private async Task<string?> GetCountryCodeAsync(string ipAddress)
+    {
+        return await CountryCodeHelper.GetCountryCodeFromIp(ipAddress);
+    }
+
+    private CreateEmployeeDto CreateEmployeeDto(EmployeeFormWrapper employee, string countryCode)
+    {
+        return new CreateEmployeeDto
+            {
+                Name = employee.Name,
+                Surname = employee.Surname,
+                BirthDate = employee.BirthDate,
+                IpAddress = employee.IpAddress,
+                IpCountryCode = countryCode,
+                PositionId = employee.PositionId
+            };
+    }
+
+    private async Task PostNewEmployeeAsync(CreateEmployeeDto newEmployee)
+    {
+        var response = await _httpClient.PostAsJsonAsync("Employees", newEmployee);
+
+        if (response.StatusCode == System.Net.HttpStatusCode.Conflict)
+        {
+            _errorMessage = await response.Content.ReadAsStringAsync();
+        }
+        else if (response.IsSuccessStatusCode)
+        {
+            _successMessage = "Employee created successfully.";
+            _navigationManager.NavigateTo("/");
+        }
+        else
+        {
+            _errorMessage = "Error creating a new Employee.";
         }
     }
 
@@ -127,72 +154,18 @@
 
     private async Task UploadEmployees()
     {
+        ResetMessages();
         _isLoading = true;
+
         try
         {
-            _errorMessage = null;
-            _successMessage = null;
-
             if (_selectedEmployeeFile != null)
             {
-                using var stream = _selectedEmployeeFile.OpenReadStream();
-                using var reader = new StreamReader(stream);
-                var content = await reader.ReadToEndAsync();
+                var employees = await ParseEmployeeFileAsync(_selectedEmployeeFile);
 
-                try
+                if (employees != null)
                 {
-                    var jsonDocument = JsonDocument.Parse(content);
-                    var rootElement = jsonDocument.RootElement.Clone();
-
-                    if (rootElement.TryGetProperty("employees", out var employeesElement))
-                    {
-                        foreach (var employeeElement in employeesElement.EnumerateArray())
-                        {
-                            if (employeeElement.TryGetProperty("BirthDate", out var birthDateElement))
-                            {
-                                var originalDate = birthDateElement.GetString();
-                                if (DateTime.TryParseExact(originalDate, "yyyy/MM/dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var dateTime))
-                                {
-                                    var formattedDate = dateTime.ToString("yyyy-MM-ddTHH:mm:ss");
-                                    content = content.Replace(originalDate, formattedDate);
-                                }
-                            }
-                        }
-
-                        var employeesJson = JsonDocument.Parse(content).RootElement.GetProperty("employees").GetRawText();
-                        var employees = JsonSerializer.Deserialize<List<BulkCreateEmployeeDto>>(employeesJson);
-
-                        if (employees != null)
-                        {
-                            foreach (var employee in employees)
-                            {
-                                var countryCode = await CountryCodeHelper.GetCountryCodeFromIp(employee.IpAddress);
-                                if (countryCode != null)
-                                {
-                                    employee.IpCountryCode = countryCode;
-                                }
-                            }
-
-                            var response = await _httpClient.PostAsJsonAsync("Employees/Upload", employees);
-                            if (!response.IsSuccessStatusCode)
-                            {
-                                _errorMessage = "Failed to upload employees.";
-                            }
-                            else
-                            {
-                                _successMessage = "Employees uploaded successfully.";
-                                _navigationManager.NavigateTo("/");
-                            }
-                        }
-                    }
-                    else
-                    {
-                        _errorMessage = "The uploaded JSON file does not contain the expected 'employees' property.";
-                    }
-                }
-                catch (JsonException ex)
-                {
-                    _errorMessage = $"JSON Parsing Error: {ex.Message}";
+                    await UploadEmployeesToServerAsync(employees);
                 }
             }
             else
@@ -200,9 +173,9 @@
                 _errorMessage = "Please select a valid JSON file to upload.";
             }
         }
-        catch (Exception ex)
+        catch
         {
-            _errorMessage = $"An error occurred while uploading employees from a file: {ex.Message}";
+            _errorMessage = "An error occurred while uploading employees.";
         }
         finally
         {
@@ -210,57 +183,106 @@
         }
     }
 
-    private async Task UploadPositions()
+    private async Task<List<BulkCreateEmployeeDto>?> ParseEmployeeFileAsync(IBrowserFile employeeFile)
     {
-        _isLoading = true;
+        using var stream = employeeFile.OpenReadStream();
+        using var reader = new StreamReader(stream);
+        var content = await reader.ReadToEndAsync();
+
         try
         {
-            _errorMessage = null;
-            _successMessage = null;
+            return ProcessEmployeeJson(content);
+        }
+        catch (JsonException)
+        {
+            _errorMessage = "JSON Parsing Error";
+            return null;
+        }
+    }
 
+    private List<BulkCreateEmployeeDto>? ProcessEmployeeJson(string content)
+    {
+        var jsonDocument = JsonDocument.Parse(content);
+        var rootElement = jsonDocument.RootElement.Clone();
+
+        if (rootElement.TryGetProperty("employees", out var employeesElement))
+        {
+            UpdateEmployeeDates(ref content, employeesElement);
+
+            var employeesJson = JsonDocument.Parse(content).RootElement.GetProperty("employees").GetRawText();
+            var employees = JsonSerializer.Deserialize<List<BulkCreateEmployeeDto>>(employeesJson);
+
+            UpdateEmployeeCountryCodes(employees);
+
+            return employees;
+        }
+        else
+        {
+            _errorMessage = "The uploaded JSON file does not contain the expected 'employees' property.";
+            return null;
+        }
+    }
+
+    private void UpdateEmployeeDates(ref string content, JsonElement employeesElement)
+    {
+        foreach (var employeeElement in employeesElement.EnumerateArray())
+        {
+            if (employeeElement.TryGetProperty("BirthDate", out var birthDateElement))
+            {
+                var originalDate = birthDateElement.GetString();
+                if (DateTime.TryParseExact(originalDate, "yyyy/MM/dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var dateTime))
+                {
+                    var formattedDate = dateTime.ToString("yyyy-MM-ddTHH:mm:ss");
+                    content = content.Replace(originalDate, formattedDate);
+                }
+            }
+        }
+    }
+
+    private async Task UpdateEmployeeCountryCodes(List<BulkCreateEmployeeDto>? employees)
+    {
+        if (employees != null)
+        {
+            foreach (var employee in employees)
+            {
+                var countryCode = await GetCountryCodeAsync(employee.IpAddress);
+                if (countryCode != null)
+                {
+                    employee.IpCountryCode = countryCode;
+                }
+            }
+        }
+    }
+
+    private async Task UploadEmployeesToServerAsync(List<BulkCreateEmployeeDto>? employees)
+    {
+        var response = await _httpClient.PostAsJsonAsync("Employees/Upload", employees);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            _errorMessage = "Failed to upload employees.";
+        }
+        else
+        {
+            _successMessage = "Employees uploaded successfully.";
+            _navigationManager.NavigateTo("/");
+        }
+    }
+
+    private async Task UploadPositions()
+    {
+        ResetMessages();
+        _isLoading = true;
+
+        try
+        {
             if (_selectedPositionFile != null)
             {
-                using var stream = _selectedPositionFile.OpenReadStream();
-                using var reader = new StreamReader(stream);
-                var content = await reader.ReadToEndAsync();
+                var positions = await ParsePositionFileAsync(_selectedPositionFile);
 
-                try
+                if (positions != null)
                 {
-                    var jsonDocument = JsonDocument.Parse(content);
-                    var rootElement = jsonDocument.RootElement.Clone();
-
-                    if (rootElement.TryGetProperty("positions", out var positionsElement))
-                    {
-                        var positionsList = new List<CreatePositionDto>();
-
-                        foreach (var positionElement in positionsElement.EnumerateArray())
-                        {
-                            var positionName = positionElement.GetString();
-                            if (!string.IsNullOrEmpty(positionName))
-                            {
-                                positionsList.Add(new CreatePositionDto { Name = positionName });
-                            }
-                        }
-
-                        var response = await _httpClient.PostAsJsonAsync("Positions/Upload", positionsList);
-                        if (!response.IsSuccessStatusCode || positionsList.Count == 0)
-                        {
-                            _errorMessage = "Failed to upload positions.";
-                        }
-                        else
-                        {
-                            _successMessage = "Positions uploaded successfully.";
-                            _positions = await _httpClient.GetFromJsonAsync<List<ReadPositionDto>>("Positions") ?? new List<ReadPositionDto>();
-                        }
-                    }
-                    else
-                    {
-                        _errorMessage = "The uploaded JSON file does not contain the expected 'positions' property.";
-                    }
-                }
-                catch (JsonException ex)
-                {
-                    _errorMessage = $"JSON Parsing Error: {ex.Message}";
+                    await UploadPositionsToServerAsync(positions);
                 }
             }
             else
@@ -268,13 +290,72 @@
                 _errorMessage = "Please select a valid JSON file to upload.";
             }
         }
-        catch (Exception ex)
+        catch
         {
-            _errorMessage = $"An error occurred while uploading positions from a file: {ex.Message}";
+            _errorMessage = "An error occurred while uploading positions.";
         }
         finally
         {
             _isLoading = false;
+        }
+    }
+
+    private async Task<List<CreatePositionDto>?> ParsePositionFileAsync(IBrowserFile positionFile)
+    {
+        using var stream = positionFile.OpenReadStream();
+        using var reader = new StreamReader(stream);
+        var content = await reader.ReadToEndAsync();
+
+        try
+        {
+            return ProcessPositionJson(content);
+        }
+        catch (JsonException)
+        {
+            _errorMessage = "JSON Parsing Error";
+            return null;
+        }
+    }
+
+    private List<CreatePositionDto>? ProcessPositionJson(string content)
+    {
+        var jsonDocument = JsonDocument.Parse(content);
+        var rootElement = jsonDocument.RootElement.Clone();
+
+        if (rootElement.TryGetProperty("positions", out var positionsElement))
+        {
+            var positionsList = new List<CreatePositionDto>();
+
+            foreach (var positionElement in positionsElement.EnumerateArray())
+            {
+                var positionName = positionElement.GetString();
+                if (!string.IsNullOrEmpty(positionName))
+                {
+                    positionsList.Add(new CreatePositionDto { Name = positionName });
+                }
+            }
+
+            return positionsList;
+        }
+        else
+        {
+            _errorMessage = "The uploaded JSON file does not contain the expected 'positions' property.";
+            return null;
+        }
+    }
+
+    private async Task UploadPositionsToServerAsync(List<CreatePositionDto> positions)
+    {
+        var response = await _httpClient.PostAsJsonAsync("Positions/Upload", positions);
+
+        if (!response.IsSuccessStatusCode || positions.Count == 0)
+        {
+            _errorMessage = "Failed to upload positions.";
+        }
+        else
+        {
+            _successMessage = "Positions uploaded successfully.";
+            await LoadPositionsAsync();
         }
     }
 }
