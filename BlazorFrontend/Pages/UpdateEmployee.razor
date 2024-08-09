@@ -1,14 +1,15 @@
 ﻿@page "/update-employee/{id:int}"
+@using BlazorFrontend.Utils
 @using Shared
 @using Shared.DTOs
 @using System.Text.Json
-@inject HttpClient Http
-@inject NavigationManager Navigation
+@inject HttpClient _httpClient
+@inject NavigationManager _navigationManager
 
 <PageTitle>Update Employee</PageTitle>
 
 <h3 class="text-center">Update Employee</h3>
-@if (employeeWrapper == null)
+@if (_employeeFormWrapper == null)
 {
     <p><em>Loading...</em></p>
 }
@@ -16,39 +17,32 @@ else
 {
     <div class="d-flex justify-content-center">
         <div class="col-md-6">
-            <h3 class="text-center">Update Employee</h3>
-            <EmployeeForm Employee="employeeWrapper" OnValidSubmit="HandleValidSubmit" />
-            @if (errorMessage != null)
+            <EmployeeForm Employee="_employeeFormWrapper" Positions="_positions" OnValidSubmit="HandleValidSubmit" />
+            @if (_errorMessage != null)
             {
                 <div class="alert alert-danger mt-3" role="alert">
-                    @errorMessage
+                    @_errorMessage
                 </div>
             }
         </div>
     </div>
-})
-
-
-@if (errorMessage != null)
-{
-    <div class="alert alert-danger mt-3" role="alert">
-        @errorMessage
-    </div>
 }
 
 @code {
-    [Parameter] public int id { get; set; }
-    private EmployeeFormWrapper? employeeWrapper;
-    private string? errorMessage;
+    [Parameter] public int Id { get; set; }
+    private List<ReadPositionDto> _positions = new();
+    private EmployeeFormWrapper? _employeeFormWrapper;
+    private string? _errorMessage;
 
     protected override async Task OnInitializedAsync()
     {
         try
         {
-            var employeeDto = await Http.GetFromJsonAsync<ReadEmployeeDto>($"https://localhost:7096/Employees/{id}");
+            _positions = await _httpClient.GetFromJsonAsync<List<ReadPositionDto>>("Positions") ?? new List<ReadPositionDto>();
+            var employeeDto = await _httpClient.GetFromJsonAsync<ReadEmployeeDto>($"Employees/{Id}");
             if (employeeDto != null)
             {
-                employeeWrapper = new EmployeeFormWrapper
+                _employeeFormWrapper = new EmployeeFormWrapper
                 {
                     Name = employeeDto.Name,
                     Surname = employeeDto.Surname,
@@ -58,9 +52,9 @@ else
                 };
             }
         }
-        catch (Exception ex)
+        catch
         {
-            errorMessage = $"An error occurred while loading data: {ex.Message}";
+            _errorMessage = $"An error occurred while loading data";
         }
     }
 
@@ -68,12 +62,12 @@ else
     {
         try
         {
-            errorMessage = null;
+            _errorMessage = null;
 
-            var countryCode = await GetCountryCodeFromIp(employee.IpAddress);
+            var countryCode = await CountryCodeHelper.GetCountryCodeFromIp(employee.IpAddress);
             if (countryCode == null)
             {
-                errorMessage = "Failed to retrieve country code from IP address.";
+                _errorMessage = "Failed to retrieve country code from IP address.";
                 return;
             }
 
@@ -87,44 +81,21 @@ else
                 PositionId = employee.PositionId
             };
 
-            var response = await Http.PutAsJsonAsync($"https://localhost:7096/Employees/{id}", updateEmployee);
-            var result = await response.Content.ReadFromJsonAsync<Response>();
+            var response = await _httpClient.PutAsJsonAsync($"Employees/{Id}", updateEmployee);
+            var result = response.IsSuccessStatusCode;
 
-            if (result == null || !result.IsSuccess)
+            if (!result)
             {
-                errorMessage = result?.Message ?? "Error updating the Employee.";
+                _errorMessage = response.Content.ToString() ?? "Error updating the Employee.";
             }
             else
             {
-                Navigation.NavigateTo("/");
+                _navigationManager.NavigateTo("/");
             }
         }
-        catch (Exception ex)
+        catch
         {
-            errorMessage = $"An error occurred: {ex.Message}";
+            _errorMessage = $"\nAn error occurred while submitting form";
         }
-    }
-
-    private async Task<string?> GetCountryCodeFromIp(string ipAddress)
-    {
-        try
-        {
-            var ipString = await Http.GetStringAsync($"https://api.cleantalk.org/?method_name=ip_info&ip={ipAddress}");
-
-            using (var jsonDoc = JsonDocument.Parse(ipString))
-            {
-                if (jsonDoc.RootElement.TryGetProperty("data", out var dataElement) &&
-                    dataElement.TryGetProperty(ipAddress, out var ipElement) &&
-                    ipElement.TryGetProperty("country_code", out var countryCodeElement))
-                {
-                    return countryCodeElement.GetString();
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Failed to retrieve country code: {ex.Message}");
-        }
-        return null;
     }
 }

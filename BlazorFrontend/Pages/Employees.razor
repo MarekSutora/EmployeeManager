@@ -36,7 +36,7 @@ else
                     <td>@employee.Position.Name</td>
                     <td>
                         <a class="btn btn-primary btn-sm" href="update-employee/@employee.Id">Update</a>
-                        <button class="btn btn-danger btn-sm" @onclick="() => DeleteEmployee(employee.Id)">Delete</button>
+                        <button class="btn btn-danger btn-sm" @onclick="() => ConfirmDeleteEmployee(employee)">Delete</button>
                     </td>
                 </tr>
             }
@@ -67,6 +67,27 @@ else
     </div>
 }
 
+@if (employeeToDelete != null)
+{
+    <div class="modal show" tabindex="-1" style="display:block;">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Confirm Deletion</h5>
+                    <button type="button" class="btn-close" @onclick="() => employeeToDelete = null"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to delete <strong>@employeeToDelete.Name @employeeToDelete.Surname</strong>?</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="() => employeeToDelete = null">Cancel</button>
+                    <button type="button" class="btn btn-danger" @onclick="() => DeleteEmployee(employeeToDelete.Id)">Delete</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @if (!string.IsNullOrEmpty(errorMessage))
 {
     <div class="alert alert-danger mt-3" role="alert">
@@ -77,6 +98,7 @@ else
 @code {
     private IEnumerable<ReadEmployeeDto>? employees;
     private ReadEmployeeDto? selectedEmployee;
+    private ReadEmployeeDto? employeeToDelete;
     private string? errorMessage;
 
     protected override async Task OnInitializedAsync()
@@ -88,11 +110,11 @@ else
     {
         try
         {
-            employees = await Http.GetFromJsonAsync<IEnumerable<ReadEmployeeDto>>("https://localhost:7096/Employees");
+            employees = await Http.GetFromJsonAsync<IEnumerable<ReadEmployeeDto>>("Employees");
         }
-        catch (Exception ex)
+        catch
         {
-            errorMessage = $"An error occurred while loading employees: {ex.Message}";
+            errorMessage = "An error occurred while loading employees";
         }
     }
 
@@ -101,18 +123,19 @@ else
         selectedEmployee = employee;
     }
 
-    private void UpdateEmployee(int id)
+    private void ConfirmDeleteEmployee(ReadEmployeeDto employee)
     {
-        Navigation.NavigateTo($"/update-employee/{id}");
+        employeeToDelete = employee;
     }
 
     private async Task DeleteEmployee(int id)
     {
         try
         {
-            var response = await Http.DeleteAsync($"https://localhost:7096/Employees/{id}");
+            var response = await Http.DeleteAsync($"Employees/{id}");
             if (response.IsSuccessStatusCode)
             {
+                employeeToDelete = null;
                 await LoadEmployees();
             }
             else
@@ -120,9 +143,9 @@ else
                 errorMessage = "Failed to delete employee.";
             }
         }
-        catch (Exception ex)
+        catch
         {
-            errorMessage = $"An error occurred: {ex.Message}";
+            errorMessage = "An error occurred when deleting employees";
         }
     }
 }

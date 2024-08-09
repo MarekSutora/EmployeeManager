@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Shared.DTOs;
 using Database.Models;
-using Microsoft.AspNetCore.Mvc.ApiExplorer;
 using Shared;
 
 namespace EmployeeManagerAPI.Controllers
@@ -24,37 +23,34 @@ namespace EmployeeManagerAPI.Controllers
         [HttpGet]
         public async Task<ActionResult<IEnumerable<ReadEmployeeDto>>> GetEmployeesAsync()
         {
-            try
-            {
-                var employees = await _dbContext.Employees.Include(e => e.Position).Select(
-                    e => new ReadEmployeeDto
+            _logger.LogInformation("Getting employees");
+            var employees = await _dbContext.Employees.Include(e => e.Position).Select(
+                e => new ReadEmployeeDto
+                {
+                    Id = e.Id,
+                    Name = e.Name,
+                    Surname = e.Surname,
+                    BirthDate = e.BirthDate,
+                    Position = new ReadPositionDto
                     {
-                        Id = e.Id,
-                        Name = e.Name,
-                        Surname = e.Surname,
-                        BirthDate = e.BirthDate,
-                        Position = new ReadPositionDto {
-                            Id = e.Position.Id,
-                            Name = e.Position.Name
-                        },
-                    }).ToListAsync(
-                    );
+                        Id = e.Position.Id,
+                        Name = e.Position.Name
+                    },
+                }).ToListAsync();
 
-                return Ok(employees);
-            }
-            catch
-            {
-                return StatusCode(500);
-            }
+            return Ok(employees);
+
         }
 
         [HttpGet("{id}")]
         public async Task<ActionResult<ReadEmployeeDto>> GetEmployeeAsync(int id)
         {
+            _logger.LogInformation($"Getting employee with id: {id}");
+
             var employee = await _dbContext.Employees.Include(e => e.Position).SingleOrDefaultAsync(e => e.Id == id);
             if (employee == null)
             {
-                return NotFound();
+                return NotFound($"Employee with id: {id} does not exist in database");
             }
 
             var readEmployeeDto = new ReadEmployeeDto
@@ -76,13 +72,16 @@ namespace EmployeeManagerAPI.Controllers
         }
 
         [HttpPost]
-        public async Task<ActionResult<Response>> AddEmployeeAsync([FromBody] CreateEmployeeDto createEmployeeDto)
+        public async Task<IActionResult> AddEmployeeAsync([FromBody] CreateEmployeeDto createEmployeeDto)
         {
+            _logger.LogInformation("Adding employee");
 
-            if (_dbContext.Employees.AnyAsync(e => e.Name == createEmployeeDto.Name &&
-            e.Surname == createEmployeeDto.Surname && e.BirthDate == createEmployeeDto.BirthDate).Result)
+            var exists = await _dbContext.Employees.AnyAsync(e => e.Name == createEmployeeDto.Name &&
+                                                                  e.Surname == createEmployeeDto.Surname &&
+                                                                  e.BirthDate == createEmployeeDto.BirthDate);
+            if (exists)
             {
-                return Conflict(new Response { IsSuccess = false, Message = "Employee already exists" });
+                return Conflict("There is already an employee with these values in the database");
             }
 
             var employee = new Employee
@@ -97,24 +96,37 @@ namespace EmployeeManagerAPI.Controllers
 
             _dbContext.Employees.Add(employee);
             await _dbContext.SaveChangesAsync();
-
+ 
             return Ok();
         }
 
+
         [HttpPost("Upload")]
-        public async Task<IActionResult> UploadEmployeesAsync([FromBody] IEnumerable<BulkCreateEmployeeDto> createEmployeeDtos)
+        public async Task<IActionResult> UploadEmployeesAsync([FromBody] List<BulkCreateEmployeeDto> createEmployeeDtos)
         {
+            _logger.LogInformation("Uploading employees");
+
             var employees = new List<Employee>();
 
             foreach (var dto in createEmployeeDtos)
             {
-                var position = await _dbContext.Positions.SingleOrDefaultAsync(p => p.Name == dto.PositionName);
+                var exists = await _dbContext.Employees
+                    .AnyAsync(e => e.Name == dto.Name && e.Surname == dto.Surname && e.BirthDate == dto.BirthDate);
+
+                if (exists)
+                {
+                    _logger.LogWarning($"Employee '{dto.Name} {dto.Surname}' with birth date {dto.BirthDate} already exists.");
+                    continue;
+                }
+
+                var position = await _dbContext.Positions.SingleOrDefaultAsync(p => p.Name == dto.Position);
                 if (position == null)
                 {
-                    position = new Position { Name = dto.PositionName };
+                    position = new Position { Name = dto.Position };
                     _dbContext.Positions.Add(position);
                     await _dbContext.SaveChangesAsync();
                 }
+
                 var employee = new Employee
                 {
                     Name = dto.Name,
@@ -128,16 +140,27 @@ namespace EmployeeManagerAPI.Controllers
                 employees.Add(employee);
             }
 
-            _dbContext.Employees.AddRange(employees);
-            await _dbContext.SaveChangesAsync();
+            if (employees.Count > 0)
+            {
+                _dbContext.Employees.AddRange(employees);
+                await _dbContext.SaveChangesAsync();
+                _logger.LogInformation($"Added {employees.Count} new employees.");
+            }
+            else
+            {
+                _logger.LogInformation("No new employees to add.");
+            }
 
             return Ok();
         }
 
 
+
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteEmployeeAsync(int id)
         {
+            _logger.LogInformation($"Deleting employee with id: {id}");
+
             var employee = await _dbContext.Employees.FindAsync(id);
             if (employee == null)
             {
@@ -152,6 +175,8 @@ namespace EmployeeManagerAPI.Controllers
         [HttpPut("{id}")]
         public async Task<IActionResult> UpdateEmployeeAsync(int id, [FromBody] UpdateEmployeeDto updateEmployeeDto)
         {
+            _logger.LogInformation($"Updating employee with id: {id}");
+
             var employee = await _dbContext.Employees.FindAsync(id);
             if (employee == null)
             {
@@ -180,6 +205,5 @@ namespace EmployeeManagerAPI.Controllers
 
             return Ok();
         }
-
     }
 }

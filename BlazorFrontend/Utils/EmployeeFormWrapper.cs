@@ -1,6 +1,6 @@
 ﻿using System.ComponentModel.DataAnnotations;
 
-namespace BlazorFrontend
+namespace BlazorFrontend.Utils
 {
     public class EmployeeFormWrapper
     {
@@ -11,7 +11,7 @@ namespace BlazorFrontend
         public string Surname { get; set; } = string.Empty;
 
         [Required(ErrorMessage = "Birth date is required")]
-        public DateTime BirthDate { get; set; }
+        public DateTime BirthDate { get; set; } = DateTime.Now;
 
         [Required(ErrorMessage = "IP address is required")]
         public string IpAddress { get; set; } = string.Empty;

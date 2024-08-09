@@ -23,41 +23,48 @@ namespace API.Controllers
         [HttpGet]
         public async Task<ActionResult<IEnumerable<ReadPositionDto>>> GetPositionsAsync()
         {
-            try
-            {
-                var positions = await _dbContext.Positions.Select(p => new ReadPositionDto
-                {
-                    Id = p.Id,
-                    Name = p.Name
-                }).ToListAsync();
+            _logger.LogInformation("Getting positions");
 
-                return Ok(positions);
-            }
-            catch
+            var positions = await _dbContext.Positions.Select(p => new ReadPositionDto
             {
-                return StatusCode(500);
-            }
+                Id = p.Id,
+                Name = p.Name
+            }).ToListAsync();
+
+            return Ok(positions);
+
         }
 
         [HttpPost("Upload")]
         public async Task<IActionResult> UploadPositionsAsync(IEnumerable<CreatePositionDto> createPositionDtos)
         {
-            try
-            {
-                var positions = createPositionDtos.Select(p => new Position
+            _logger.LogInformation("Uploading positions");
+
+            var existingPositionNames = await _dbContext.Positions
+                .AsNoTracking()
+                .Select(p => p.Name)
+                .ToListAsync();
+
+            var newPositions = createPositionDtos
+                .Where(p => !existingPositionNames.Contains(p.Name))
+                .Select(p => new Position
                 {
                     Name = p.Name
-                });
+                })
+                .ToList();
 
-                await _dbContext.Positions.AddRangeAsync(positions);
-                await _dbContext.SaveChangesAsync();
-
-                return Ok();
-            }
-            catch
+            if (newPositions.Count > 0)
             {
-                return StatusCode(500);
+                await _dbContext.Positions.AddRangeAsync(newPositions);
+                await _dbContext.SaveChangesAsync();
+                _logger.LogInformation($"Added {newPositions.Count} new positions.");
             }
+            else
+            {
+                _logger.LogInformation("No new positions to add.");
+            }
+
+            return Ok();
         }
     }
 }

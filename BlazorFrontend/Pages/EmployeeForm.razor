@@ -1,26 +1,10 @@
-﻿@using Shared.DTOs
+﻿@using BlazorFrontend.Utils
+@using Shared.DTOs
 @using System.ComponentModel.DataAnnotations
-@inject HttpClient Http
-
-@code {
-    [Parameter] public EmployeeFormWrapper Employee { get; set; } = new EmployeeFormWrapper();
-    private IEnumerable<ReadPositionDto> Positions { get; set; } = new List<ReadPositionDto>();
-    [Parameter] public EventCallback<EmployeeFormWrapper> OnValidSubmit { get; set; }
-
-    protected override async Task OnInitializedAsync()
-    {
-        Positions = await Http.GetFromJsonAsync<IEnumerable<ReadPositionDto>>("https://localhost:7096/Positions") ?? [];
-    }
-
-    private async Task OnSubmit()
-    {
-        await OnValidSubmit.InvokeAsync(Employee);
-    }
-}
+@inject HttpClient _httpClient
 
 <EditForm Model="Employee" OnValidSubmit="OnSubmit">
-    <DataAnnotationsValidator />
-    <ValidationSummary />
+    <DataAnnotationsValidator />   
 
     <div class="mb-3">
         <label for="name" class="form-label">Name</label>
@@ -36,7 +20,7 @@
 
     <div class="mb-3">
         <label for="birthDate" class="form-label">Birth Date</label>
-        <InputDate id="birthDate" class="form-control" @bind-Value="Employee.BirthDate" />
+        <InputDate id="birthDate" class="form-control" @bind-Value="Employee.BirthDate"/>
         <ValidationMessage For="@(() => Employee.BirthDate)" />
     </div>
 
@@ -60,3 +44,14 @@
 
     <button type="submit" class="btn btn-primary">Submit</button>
 </EditForm>
+
+@code {
+    [Parameter] public EmployeeFormWrapper Employee { get; set; } = new EmployeeFormWrapper();
+    [Parameter] public IEnumerable<ReadPositionDto> Positions { get; set; } = new List<ReadPositionDto>();
+    [Parameter] public EventCallback<EmployeeFormWrapper> OnValidSubmit { get; set; }
+
+    private async Task OnSubmit()
+    {
+        await OnValidSubmit.InvokeAsync(Employee);
+    }
+}

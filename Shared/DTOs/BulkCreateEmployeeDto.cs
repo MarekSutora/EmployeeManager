@@ -21,6 +21,6 @@ namespace Shared.DTOs
         public string IpCountryCode { get; set; } = string.Empty;
 
         [Required(ErrorMessage = "Position ID is required")]
-        public string PositionName { get; set; } = string.Empty;
+        public string Position { get; set; } = string.Empty;
     }
 }

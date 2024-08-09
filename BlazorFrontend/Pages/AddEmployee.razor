@@ -1,8 +1,10 @@
 ﻿@page "/add-employee"
-@using Shared
+@using BlazorFrontend.Utils
 @using Shared.DTOs
 @using System.Text.Json
-@inject HttpClient Http
+@using System.Globalization
+@inject HttpClient _httpClient
+@inject NavigationManager _navigationManager
 
 <PageTitle>Add Employee</PageTitle>
 
@@ -10,140 +12,269 @@
     <div class="col-md-6">
         <h3 class="text-center">Add New Employee</h3>
 
-        <EmployeeForm Employee="newEmployeeWrapper" OnValidSubmit="HandleValidSubmit" />
+        <EmployeeForm Employee="_employeeFormWrapper" Positions="_positions" OnValidSubmit="HandleValidSubmit" />
 
-        @if (errorMessage != null)
+        @if (_errorMessage != null)
         {
             <div class="alert alert-danger mt-3" role="alert">
-                @errorMessage
+                @_errorMessage
             </div>
         }
 
-        <hr />
-        <h4 class="text-center">Bulk Add Employees</h4>
-        <InputFile class="form-control mb-3" accept=".json" OnChange="HandleFileSelected" />
-        <button class="btn btn-secondary" @onclick="UploadEmployees">Upload Employees</button>
+        @if (_successMessage != null)
+        {
+            <div class="alert alert-success mt-3" role="alert">
+                @_successMessage
+            </div>
+        }
+
+        @if (_isLoading)
+        {
+            <div class="text-center mt-3">
+                <div class="spinner-border" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+            </div>
+        }
+
+        <div class="d-flex justify-content-center">
+            <div class="col-md-6">
+                <hr />
+                <h4 class="text-center">Bulk Add Employees</h4>
+                <InputFile class="form-control mb-3" accept=".json" OnChange="HandleEmployeeFileSelected" />
+                <button class="btn btn-secondary" @onclick="UploadEmployees">Upload Employees</button>
+
+                <hr />
+                <h4 class="text-center">Bulk Add Positions</h4>
+                <InputFile class="form-control mb-3" accept=".json" OnChange="HandlePositionFileSelected" />
+                <button class="btn btn-secondary" @onclick="UploadPositions">Upload Positions</button>
+            </div>
+        </div>
     </div>
 </div>
 
 @code {
-    private EmployeeFormWrapper newEmployeeWrapper = new();
-    private List<ReadPositionDto> positions = new();
-    private string? errorMessage;
-    private IBrowserFile? selectedFile;
+    private EmployeeFormWrapper _employeeFormWrapper = new();
+    private List<ReadPositionDto> _positions = new();
+    private string? _errorMessage;
+    private string? _successMessage;
+    private IBrowserFile? _selectedEmployeeFile;
+    private IBrowserFile? _selectedPositionFile;
+    private bool _isLoading = false;
 
     protected override async Task OnInitializedAsync()
     {
-        positions = await Http.GetFromJsonAsync<List<ReadPositionDto>>("https://localhost:7096/Positions") ?? new List<ReadPositionDto>();
+        _positions = await _httpClient.GetFromJsonAsync<List<ReadPositionDto>>("Positions") ?? new List<ReadPositionDto>();
     }
 
     private async Task HandleValidSubmit(EmployeeFormWrapper employee)
     {
+        _isLoading = true;
         try
         {
-            errorMessage = null;
+            _errorMessage = null;
+            _successMessage = null;
 
-            var countryCode = await GetCountryCodeFromIp(employee.IpAddress);
+            var countryCode = await CountryCodeHelper.GetCountryCodeFromIp(employee.IpAddress);
             if (countryCode == null)
             {
-                errorMessage = "Failed to retrieve country code from IP address.";
+                _errorMessage = "Failed to retrieve country code from IP address.";
                 return;
             }
 
             var newEmployee = new CreateEmployeeDto
-            {
-                Name = employee.Name,
-                Surname = employee.Surname,
-                BirthDate = employee.BirthDate,
-                IpAddress = employee.IpAddress,
-                IpCountryCode = countryCode,
-                PositionId = employee.PositionId
-            };
+                {
+                    Name = employee.Name,
+                    Surname = employee.Surname,
+                    BirthDate = employee.BirthDate,
+                    IpAddress = employee.IpAddress,
+                    IpCountryCode = countryCode,
+                    PositionId = employee.PositionId
+                };
 
-            var response = await Http.PostAsJsonAsync("https://localhost:7096/Employees", newEmployee);
-            var result = await response.Content.ReadFromJsonAsync<Response>();
+            var response = await _httpClient.PostAsJsonAsync("Employees", newEmployee);
+            var result = response.IsSuccessStatusCode;
 
-            if (result == null || !result.IsSuccess)
+            if (!result)
             {
-                errorMessage = result?.Message ?? "Error creating a new Employee.";
+                _errorMessage = response.Content.ToString() ?? "Error creating a new Employee.";
             }
             else
             {
-                newEmployeeWrapper = new EmployeeFormWrapper();
+                _successMessage = "Employee created successfully.";
+                _navigationManager.NavigateTo("/");
             }
         }
-        catch (Exception ex)
+        catch
         {
-            errorMessage = $"An error occurred: {ex.Message}";
+            _errorMessage = "An error occurred when submitting the form";
+        }
+        finally
+        {
+            _isLoading = false;
         }
     }
 
-    private async Task<string?> GetCountryCodeFromIp(string ipAddress)
+    private void HandleEmployeeFileSelected(InputFileChangeEventArgs e)
     {
-        try
-        {
-            var ipString = await Http.GetStringAsync($"https://api.cleantalk.org/?method_name=ip_info&ip={ipAddress}");
-
-            using (var jsonDoc = JsonDocument.Parse(ipString))
-            {
-                if (jsonDoc.RootElement.TryGetProperty("data", out var dataElement) &&
-                    dataElement.TryGetProperty(ipAddress, out var ipElement) &&
-                    ipElement.TryGetProperty("country_code", out var countryCodeElement))
-                {
-                    return countryCodeElement.GetString();
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Failed to retrieve country code: {ex.Message}");
-        }
-        return null;
+        _selectedEmployeeFile = e.File;
     }
 
-    private void HandleFileSelected(InputFileChangeEventArgs e)
+    private void HandlePositionFileSelected(InputFileChangeEventArgs e)
     {
-        selectedFile = e.File;
+        _selectedPositionFile = e.File;
     }
 
     private async Task UploadEmployees()
     {
+        _isLoading = true;
         try
         {
-            errorMessage = null;
-            if (selectedFile != null)
+            _errorMessage = null;
+            _successMessage = null;
+
+            if (_selectedEmployeeFile != null)
             {
-                using var stream = selectedFile.OpenReadStream();
+                using var stream = _selectedEmployeeFile.OpenReadStream();
                 using var reader = new StreamReader(stream);
                 var content = await reader.ReadToEndAsync();
 
-                var employees = JsonSerializer.Deserialize<List<BulkCreateEmployeeDto>>(content);
-                if (employees != null)
+                try
                 {
-                    foreach (var employee in employees)
+                    var jsonDocument = JsonDocument.Parse(content);
+                    var rootElement = jsonDocument.RootElement.Clone();
+
+                    if (rootElement.TryGetProperty("employees", out var employeesElement))
                     {
-                        var countryCode = await GetCountryCodeFromIp(employee.IpAddress);
-                        if (countryCode != null)
+                        foreach (var employeeElement in employeesElement.EnumerateArray())
                         {
-                            employee.IpCountryCode = countryCode;
+                            if (employeeElement.TryGetProperty("BirthDate", out var birthDateElement))
+                            {
+                                var originalDate = birthDateElement.GetString();
+                                if (DateTime.TryParseExact(originalDate, "yyyy/MM/dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var dateTime))
+                                {
+                                    var formattedDate = dateTime.ToString("yyyy-MM-ddTHH:mm:ss");
+                                    content = content.Replace(originalDate, formattedDate);
+                                }
+                            }
+                        }
+
+                        var employeesJson = JsonDocument.Parse(content).RootElement.GetProperty("employees").GetRawText();
+                        var employees = JsonSerializer.Deserialize<List<BulkCreateEmployeeDto>>(employeesJson);
+
+                        if (employees != null)
+                        {
+                            foreach (var employee in employees)
+                            {
+                                var countryCode = await CountryCodeHelper.GetCountryCodeFromIp(employee.IpAddress);
+                                if (countryCode != null)
+                                {
+                                    employee.IpCountryCode = countryCode;
+                                }
+                            }
+
+                            var response = await _httpClient.PostAsJsonAsync("Employees/Upload", employees);
+                            if (!response.IsSuccessStatusCode)
+                            {
+                                _errorMessage = "Failed to upload employees.";
+                            }
+                            else
+                            {
+                                _successMessage = "Employees uploaded successfully.";
+                                _navigationManager.NavigateTo("/");
+                            }
                         }
                     }
-
-                    var response = await Http.PostAsJsonAsync("https://localhost:7096/Employees/Upload", employees);
-                    if (!response.IsSuccessStatusCode)
+                    else
                     {
-                        errorMessage = "Failed to upload employees.";
+                        _errorMessage = "The uploaded JSON file does not contain the expected 'employees' property.";
                     }
+                }
+                catch (JsonException ex)
+                {
+                    _errorMessage = $"JSON Parsing Error: {ex.Message}";
                 }
             }
             else
             {
-                errorMessage = "Please select a valid JSON file to upload.";
+                _errorMessage = "Please select a valid JSON file to upload.";
             }
         }
         catch (Exception ex)
         {
-            errorMessage = $"An error occurred: {ex.Message}";
+            _errorMessage = $"An error occurred while uploading employees from a file: {ex.Message}";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task UploadPositions()
+    {
+        _isLoading = true;
+        try
+        {
+            _errorMessage = null;
+            _successMessage = null;
+
+            if (_selectedPositionFile != null)
+            {
+                using var stream = _selectedPositionFile.OpenReadStream();
+                using var reader = new StreamReader(stream);
+                var content = await reader.ReadToEndAsync();
+
+                try
+                {
+                    var jsonDocument = JsonDocument.Parse(content);
+                    var rootElement = jsonDocument.RootElement.Clone();
+
+                    if (rootElement.TryGetProperty("positions", out var positionsElement))
+                    {
+                        var positionsList = new List<CreatePositionDto>();
+
+                        foreach (var positionElement in positionsElement.EnumerateArray())
+                        {
+                            var positionName = positionElement.GetString();
+                            if (!string.IsNullOrEmpty(positionName))
+                            {
+                                positionsList.Add(new CreatePositionDto { Name = positionName });
+                            }
+                        }
+
+                        var response = await _httpClient.PostAsJsonAsync("Positions/Upload", positionsList);
+                        if (!response.IsSuccessStatusCode || positionsList.Count == 0)
+                        {
+                            _errorMessage = "Failed to upload positions.";
+                        }
+                        else
+                        {
+                            _successMessage = "Positions uploaded successfully.";
+                            _positions = await _httpClient.GetFromJsonAsync<List<ReadPositionDto>>("Positions") ?? new List<ReadPositionDto>();
+                        }
+                    }
+                    else
+                    {
+                        _errorMessage = "The uploaded JSON file does not contain the expected 'positions' property.";
+                    }
+                }
+                catch (JsonException ex)
+                {
+                    _errorMessage = $"JSON Parsing Error: {ex.Message}";
+                }
+            }
+            else
+            {
+                _errorMessage = "Please select a valid JSON file to upload.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"An error occurred while uploading positions from a file: {ex.Message}";
+        }
+        finally
+        {
+            _isLoading = false;
         }
     }
 }
