@@ -79,7 +79,7 @@
 
         try
         {
-            var countryCode = await GetCountryCodeAsync(employee.IpAddress);
+            var countryCode = await CountryCodeHelper.GetCountryCodeFromIp(employee.IpAddress);
             if (countryCode == null)
             {
                 _errorMessage = "Failed to retrieve country code from IP address.";
@@ -103,11 +103,6 @@
     {
         _errorMessage = null;
         _successMessage = null;
-    }
-
-    private async Task<string?> GetCountryCodeAsync(string ipAddress)
-    {
-        return await CountryCodeHelper.GetCountryCodeFromIp(ipAddress);
     }
 
     private CreateEmployeeDto CreateEmployeeDto(EmployeeFormWrapper employee, string countryCode)
@@ -191,7 +186,7 @@
 
         try
         {
-            return ProcessEmployeeJson(content);
+            return await ProcessEmployeeJson(content);
         }
         catch (JsonException)
         {
@@ -200,19 +195,19 @@
         }
     }
 
-    private List<BulkCreateEmployeeDto>? ProcessEmployeeJson(string content)
+    private async  Task<List<BulkCreateEmployeeDto>?> ProcessEmployeeJson(string content)
     {
         var jsonDocument = JsonDocument.Parse(content);
         var rootElement = jsonDocument.RootElement.Clone();
 
         if (rootElement.TryGetProperty("employees", out var employeesElement))
         {
-            UpdateEmployeeDates(ref content, employeesElement);
+            var newContent = UpdateEmployeeDates(content, employeesElement);
 
-            var employeesJson = JsonDocument.Parse(content).RootElement.GetProperty("employees").GetRawText();
+            var employeesJson = JsonDocument.Parse(newContent).RootElement.GetProperty("employees").GetRawText();
             var employees = JsonSerializer.Deserialize<List<BulkCreateEmployeeDto>>(employeesJson);
 
-            UpdateEmployeeCountryCodes(employees);
+            await UpdateEmployeeCountryCodes(employees);
 
             return employees;
         }
@@ -223,7 +218,7 @@
         }
     }
 
-    private void UpdateEmployeeDates(ref string content, JsonElement employeesElement)
+    private string UpdateEmployeeDates(string content, JsonElement employeesElement)
     {
         foreach (var employeeElement in employeesElement.EnumerateArray())
         {
@@ -237,6 +232,7 @@
                 }
             }
         }
+        return content;
     }
 
     private async Task UpdateEmployeeCountryCodes(List<BulkCreateEmployeeDto>? employees)
@@ -245,7 +241,7 @@
         {
             foreach (var employee in employees)
             {
-                var countryCode = await GetCountryCodeAsync(employee.IpAddress);
+                var countryCode = await CountryCodeHelper.GetCountryCodeFromIp(employee.IpAddress);
                 if (countryCode != null)
                 {
                     employee.IpCountryCode = countryCode;

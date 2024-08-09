@@ -104,7 +104,7 @@ namespace EmployeeManagerAPI.Controllers
 
 
         [HttpPost("Upload")]
-        public async Task<IActionResult> UploadEmployeesAsync([FromBody] List<BulkCreateEmployeeDto> createEmployeeDtos)
+        public async Task<IActionResult> UploadEmployeesAsync([FromBody] IEnumerable<BulkCreateEmployeeDto> createEmployeeDtos)
         {
             _logger.LogInformation("Uploading employees");
 
@@ -156,8 +156,6 @@ namespace EmployeeManagerAPI.Controllers
             return Ok();
         }
 
-
-
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteEmployeeAsync(int id)
         {
@@ -174,6 +172,7 @@ namespace EmployeeManagerAPI.Controllers
 
             return Ok();
         }
+
         [HttpPut("{id}")]
         public async Task<IActionResult> UpdateEmployeeAsync(int id, [FromBody] UpdateEmployeeDto updateEmployeeDto)
         {

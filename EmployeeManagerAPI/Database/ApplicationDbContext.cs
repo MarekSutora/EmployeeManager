@@ -58,7 +58,7 @@ namespace API.Database
                     Name = "John",
                     Surname = "Doe",
                     BirthDate = new DateTime(1990, 1, 1),
-                    IpAddress = "0.0.0.0",
+                    IpAddress = "182.164.12.11",
                     IpCountryCode = "US",
                     PositionId = 1
                     },
@@ -68,7 +68,7 @@ namespace API.Database
                     Name = "Jane",
                     Surname = "Doe",
                     BirthDate = new DateTime(1995, 1, 1),
-                    IpAddress = "1.1.1.1",
+                    IpAddress = "182.164.12.11",
                     IpCountryCode = "SK",
                     PositionId = 2
                     },
@@ -78,7 +78,7 @@ namespace API.Database
                     Name = "Jack",
                     Surname = "Doe",
                     BirthDate = new DateTime(2000, 1, 1),
-                    IpAddress = "2.2.2.2",
+                    IpAddress = "182.164.12.11",
                     IpCountryCode = "CZ",
                     PositionId = 3
                 }
