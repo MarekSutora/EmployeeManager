@@ -17,11 +17,6 @@ namespace API.Database
             base.OnModelCreating(modelBuilder);
 
             modelBuilder.Entity<Employee>()
-                .HasOne(e => e.Position)
-                .WithMany(p => p.Employees)
-                .HasForeignKey(e => e.PositionId);
-
-            modelBuilder.Entity<Employee>()
                 .Property(e => e.Name)
                 .IsRequired();
 

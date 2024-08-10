@@ -7,6 +7,5 @@ namespace Database.Models
     {
         public int Id { get; set; }
         public required string Name { get; set; } = string.Empty;
-        public ICollection<Employee> Employees { get; set; } = new List<Employee>();
     }
 }
